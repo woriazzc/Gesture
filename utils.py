@@ -45,19 +45,27 @@ def test(model, memory_dataloader, test_dataloader, k, epoch, epochs, C, tempera
     feature_bank = []
     feature_label = []
     with torch.no_grad():
-        for x, _, target in tqdm(memory_dataloader, desc='Feature extracting'):
-            feature, out = model(x.to(device))
-            feature_bank.append(feature)
-            feature_label.append(target)
-        # (D, N)
-        feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
 
-        # (N)
-        feature_label = torch.cat(feature_label).to(device)
+        try:
+            feature_bank = torch.load('./model/bank.pt').to(device)
+            feature_label = torch.load('./model/label.pt').to(device)
+        except:
+            for x, _, target in tqdm(memory_dataloader, desc='Feature extracting'):
+                feature, out = model(x.to(device))
+                feature_bank.append(feature)
+                feature_label.append(target)
+
+            # (D, N)
+            feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
+            # (N)
+            feature_label = torch.cat(feature_label).to(device)
+
+            torch.save(feature_bank, './model/bank.pt')
+            torch.save(feature_label, './model/label.pt')
 
         N = feature_bank.shape[1]
 
-        total_top1, total_top5, total_num = 0.0, 0.0, 0
+        total_top1, total_top2, total_num = 0.0, 0.0, 0
         test_bar = tqdm(test_dataloader)
         for x, _, target in test_bar:
             # (B, H), (B)
@@ -89,8 +97,8 @@ def test(model, memory_dataloader, test_dataloader, k, epoch, epochs, C, tempera
 
             total_num += B
             total_top1 += torch.sum((pred_labels[:, :1] == target.unsqueeze(-1)).any(dim=1).float()).item()
-            total_top5 += torch.sum((pred_labels[:, :5] == target.unsqueeze(-1)).any(dim=1).float()).item()
+            total_top2 += torch.sum((pred_labels[:, :2] == target.unsqueeze(-1)).any(dim=1).float()).item()
 
-            test_bar.set_description('Test Epoch: [{}/{}] Acc@1:{:.2f}% Acc@5:{:.2f}%'.format(epoch, epochs, total_top1 / total_num * 100, total_top5 / total_num * 100))
+            test_bar.set_description('Test Epoch: [{}/{}] Acc@1:{:.2f}% Acc@2:{:.2f}%'.format(epoch, epochs, total_top1 / total_num * 100, total_top2 / total_num * 100))
 
-    return total_top1 / total_num * 100, total_top5 / total_num * 100
+    return total_top1 / total_num * 100, total_top2 / total_num * 100

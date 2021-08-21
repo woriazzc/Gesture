@@ -1,12 +1,11 @@
-from data_utils import GesDataset
-import torch
-from torchvision import transforms
 import matplotlib.pyplot as plt
 from utils import *
 from model import Model
 import torch.optim as optim
 from thop import profile, clever_format
 from data_utils import *
+import os
+import numpy as np
 
 feature_dim = 128
 temperature = 0.5
@@ -39,6 +38,11 @@ if __name__ == "__main__":
     # imshow(img, lab)
     # plt.show()
 
+    if not os.path.exists('model'):
+        os.mkdir('model')
+    if not os.path.exists('results'):
+        os.mkdir('results')
+
     model = Model(feature_dim)
     try:
         model.load_state_dict(torch.load(pretrained_path, map_location='cpu'), strict=False)
@@ -50,16 +54,19 @@ if __name__ == "__main__":
     flops, params = clever_format([flops, params])
     print('# Model Params: {} FLOPs: {}'.format(params, flops))
 
-    results = {'train_loss': [], 'test_acc@1': [], 'test_acc@5': []}
+    results = {'train_loss': [], 'test_acc@1': [], 'test_acc@2': []}
     best_acc = 0.0
 
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-6)
     for epoch in range(1, epochs + 1):
-        # train_loss = train(model, optimizer, train_loader, epoch, epochs, temperature, batch_size, device)
-        test_acc1, test_acc5 = test(model, memory_dataloader, test_loader, k, epoch, epochs, C, temperature, device)
-        # results['train_loss'].append(train_loss)
+        train_loss = train(model, optimizer, train_loader, epoch, epochs, temperature, batch_size, device)
+        test_acc1, test_acc2 = test(model, memory_dataloader, test_loader, k, epoch, epochs, C, temperature, device)
+        results['train_loss'].append(train_loss)
         results['test_acc@1'].append(test_acc1)
-        results['test_acc@5'].append(test_acc5)
+        results['test_acc@2'].append(test_acc2)
         if test_acc1 > best_acc:
             best_acc = test_acc1
             torch.save(model.state_dict(), pretrained_path)
+
+    for k in results:
+        np.save('./results/{}.npy'.format(k), results[k])
