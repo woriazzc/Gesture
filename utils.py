@@ -4,15 +4,20 @@ from tqdm import tqdm
 
 def simclr_loss(out_left, out_right, tau, device='cuda'):
     N = out_left.shape[0]
+
     out = torch.cat((out_left, out_right), dim=0)
     norm = torch.linalg.norm(out, dim=1, keepdim=True)
+
     sim_matrix = torch.mm(out, out.T) / torch.mm(norm, norm.T)
     sim_exp = torch.exp(sim_matrix / tau).to(device)
+
     mask = (torch.ones_like(sim_exp, device=device) - torch.eye(2 * N, device=device)).to(device).bool()
     sim_exp = sim_exp.masked_select(mask).view(2*N, -1)
     exp_sum = torch.sum(sim_exp, dim=1, keepdim=True)
+
     pos_pairs = torch.sum(out_left * out_right, dim=1, keepdim=True) / torch.linalg.norm(out_left, dim=1, keepdim=True) / torch.linalg.norm(out_right, dim=1, keepdim=True)
     pos_pairs = torch.exp(pos_pairs / tau).repeat(2, 1).to(device)
+
     loss = torch.mean(-torch.log(pos_pairs / exp_sum))
     return loss
 
@@ -46,29 +51,29 @@ def test(model, memory_dataloader, test_dataloader, k, epoch, epochs, C, tempera
     feature_label = []
     with torch.no_grad():
 
-        try:
-            feature_bank = torch.load('./model/bank.pt').to(device)
-            feature_label = torch.load('./model/label.pt').to(device)
-        except:
-            for x, _, target in tqdm(memory_dataloader, desc='Feature extracting'):
-                feature, out = model(x.to(device))
-                feature_bank.append(feature)
-                feature_label.append(target)
+        # try:
+        #     feature_bank = torch.load('./model/bank.pt').to(device)
+        #     feature_label = torch.load('./model/label.pt').to(device)
+        # except:
+        for x, _, target in tqdm(memory_dataloader, desc='Feature extracting'):
+            feature, out = model(x.to(device))
+            feature_bank.append(feature)
+            feature_label.append(target)
 
-            # (D, N)
-            feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
-            # (N)
-            feature_label = torch.cat(feature_label).to(device)
+        # (D, N)
+        feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
+        # (N)
+        feature_label = torch.cat(feature_label).to(device)
 
-            torch.save(feature_bank, './model/bank.pt')
-            torch.save(feature_label, './model/label.pt')
+        torch.save(feature_bank, './model/bank.pt')
+        torch.save(feature_label, './model/label.pt')
 
         N = feature_bank.shape[1]
 
         total_top1, total_top2, total_num = 0.0, 0.0, 0
         test_bar = tqdm(test_dataloader)
         for x, _, target in test_bar:
-            # (B, H), (B)
+            # (B, *), (B)
             x, target = x.to(device), target.to(device)
 
             # (B, D)
@@ -102,3 +107,49 @@ def test(model, memory_dataloader, test_dataloader, k, epoch, epochs, C, tempera
             test_bar.set_description('Test Epoch: [{}/{}] Acc@1:{:.2f}% Acc@2:{:.2f}%'.format(epoch, epochs, total_top1 / total_num * 100, total_top2 / total_num * 100))
 
     return total_top1 / total_num * 100, total_top2 / total_num * 100
+
+
+def predict_(model, img, feature_bank, feature_label, k, C, temperature=0.5, device='cuda'):
+    model.eval()
+    with torch.no_grad():
+        img = img.to(device)
+
+        # (1, D)
+        feature, out = model(img)
+
+        # (1, N)
+        sim_matrix = torch.mm(feature, feature_bank)
+
+        # (1, K)   (1, K)
+        fk_weight, fk_index = sim_matrix.topk(k=k, dim=-1)
+        fk_weight = (fk_weight / temperature).exp()
+
+        # (1, K)
+        sim_labels = torch.gather(feature_label.expand(N, -1), 1, fk_index)
+        B, K = sim_labels.shape
+
+        # (1, K, C)
+        one_hot = torch.zeros(B, K, C, device=device)
+        one_hot = one_hot.scatter(-1, sim_labels.unsqueeze(-1), 1)
+
+        # (1, K)
+        pred_scores = torch.sum(one_hot * fk_weight.unsqueeze(-1), dim=1)
+
+        # (1, K)
+        pred_labels = pred_scores.argsort(dim=1, descending=True)
+
+    return pred_labels[0, 0].item()
+
+def predict(img, k=200, C=5, device='cuda'):
+    try:
+        model = torch.load('./model/trained_simclr_model.pth').to(device)
+    except:
+        print('No model error !')
+
+    try:
+        feature_bank = torch.load('./model/bank.pt').to(device)
+        feature_label = torch.load('./model/label.pt').to(device)
+    except:
+        print('No feature error !')
+
+    return predict_(model, img.unsqueeze(0), feature_bank, feature_label, k, C, device=device)
