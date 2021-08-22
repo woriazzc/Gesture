@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 from utils import *
 from model import Model
 import torch.optim as optim
@@ -15,13 +14,10 @@ temperature = 0.5
 k = 200
 C = 5
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-pretrained_path = './model/trained_simclr_model.pth'
+model_path = './model/model.pt'
+bank_path = './model/bank.pt'
+label_path = './model/label.pt'
 
-def imshow(tens, lab):
-    """Imshow for Tensor"""
-    img = tens.numpy().transpose((1, 2, 0))
-    plt.imshow(img)
-    plt.title(lab)
 
 if __name__ == "__main__":
     train_trans = compute_train_transform()
@@ -45,7 +41,7 @@ if __name__ == "__main__":
 
     model = Model(feature_dim)
     try:
-        model.load_state_dict(torch.load(pretrained_path, map_location='cpu'), strict=False)
+        model = torch.load(model_path)
     except:
         pass
     model = model.to(device)
@@ -62,13 +58,15 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-6)
     for epoch in range(1, epochs + 1):
         train_loss = train(model, optimizer, train_loader, epoch, epochs, temperature, batch_size, device)
-        test_acc1, test_acc2 = test(model, memory_dataloader, test_loader, k, epoch, epochs, C, temperature, device)
+        test_acc1, test_acc2, feature_bank, feature_label = test(model, memory_dataloader, test_loader, k, epoch, epochs, C, temperature, device)
         results['train_loss'].append(train_loss)
         results['test_acc@1'].append(test_acc1)
         results['test_acc@2'].append(test_acc2)
         if test_acc1 > best_acc:
             best_acc = test_acc1
-            torch.save(model.state_dict(), pretrained_path)
+            torch.save(model, model_path)
+            torch.save(feature_bank, bank_path)
+            torch.save(feature_label, label_path)
 
     for k in results:
         try:

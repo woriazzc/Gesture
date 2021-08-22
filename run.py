@@ -1,7 +1,7 @@
-from utils import predict
 import cv2
 import numpy as np
-from data_utils import compute_test_transform
+from data_utils import *
+from Gesture import Gesture
 
 
 capture = 0
@@ -14,6 +14,9 @@ y1 = 60
 x2 = 640
 y2 = 350
 Gesturetype = ['666', 'yech', 'stop', 'punch', 'OK']
+model_path = './model/model.pt'
+feature_bank_path = './model/bank.pt'
+feature_label_path = './model/label.pt'
 
 if __name__ == '__main__':
     # 读取默认摄像头
@@ -24,6 +27,9 @@ if __name__ == '__main__':
     bgModel = cv2.createBackgroundSubtractorMOG2(0, bgSubThreshold)
 
     transform = compute_test_transform()
+
+    gesture = Gesture(model_path, feature_bank_path, feature_label_path)
+
     while True:
         # 读取视频帧
         ret, frame = cap.read()
@@ -41,24 +47,24 @@ if __name__ == '__main__':
         # 定义roi区域，第一个为y的取值，第2个为x的取值
         # frame = frame[50:300, 220:450]
         frame = frame[y1:y2, x1:x2]
-        cv2.imshow('bilateralFilter', frame)
+        # cv2.imshow('bilateralFilter', frame)
         # 背景减法运动检测
         bg = bgModel.apply(frame, learningRate=0)
         # 显示背景减法的窗口
-        cv2.imshow('bg', bg)
+        # cv2.imshow('bg', bg)
         # 图像边缘处理--腐蚀
         fgmask = cv2.erode(bg, skinkernel, iterations=1)
         # 显示边缘处理后的图像
-        cv2.imshow('erode', fgmask)
+        # cv2.imshow('erode', fgmask)
         # 将原始图像与背景减法+腐蚀处理后的蒙版做"与"操作
         bitwise_and = cv2.bitwise_and(frame, frame, mask=fgmask)
         # 显示与操作后的图像
-        cv2.imshow('bitwise_and', bitwise_and)
+        # cv2.imshow('bitwise_and', bitwise_and)
         # 灰度处理
         gray = cv2.cvtColor(bitwise_and, cv2.COLOR_BGR2GRAY)
         # 高斯滤波
         blur = cv2.GaussianBlur(gray, (blurValue, blurValue), 2)
-        cv2.imshow('GaussianBlur', blur)
+        # cv2.imshow('GaussianBlur', blur)
 
         # 使用自适应阈值分割(adaptiveThreshold)
         thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
@@ -69,13 +75,17 @@ if __name__ == '__main__':
         # _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
         # cv2.imshow('threshold1', thresh)
 
+        Ges = cv2.cvtColor(Ges, cv2.COLOR_BGR2RGB)
         Ges = transform(Ges)
-        prediction = predict(Ges)
+        prediction = gesture.predict(Ges)
         ges_type = Gesturetype[prediction]
 
-        # print(ges_type)
         cv2.putText(rec, ges_type, (x1, y1), fontFace=cv2.FONT_HERSHEY_COMPLEX, fontScale=1, thickness=2, color=(0, 0, 255))
         cv2.imshow('Original', rec)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        k = cv2.waitKey(1)
+        if k & 0xFF == ord('q'):
             break
+        elif k & 0xFF == ord('b'):
+            # 背景重置
+            bgModel = cv2.createBackgroundSubtractorMOG2(0, bgSubThreshold)

@@ -1,8 +1,17 @@
 import torch
 from PIL import Image
+import matplotlib.pyplot as plt
 import os
 import random
 from torchvision import transforms
+
+
+def imshow(tens, lab):
+    """Imshow for Tensor"""
+    img = tens.numpy().transpose((1, 2, 0))
+    plt.imshow(img)
+    plt.title(lab)
+
 
 def compute_train_transform(seed=123456):
     random.seed(seed)
